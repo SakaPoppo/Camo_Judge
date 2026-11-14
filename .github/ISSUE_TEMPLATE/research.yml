@@ -1,0 +1,45 @@
+name: 分析・調査
+description: 分析や技術調査の目的、作業、結果を記録します
+title: ""
+body:
+  - type: textarea
+    id: purpose
+    attributes:
+      label: 目的
+      description: 何を調べたいか、何を判断するための調査かを記載してください。
+      placeholder: 例）HSVヒストグラムのビン数による結果の差を確認する
+    validations:
+      required: true
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: 作業内容
+      description: Markdownのチェックリストで、調査・分析することを記載してください。
+      value: |
+        - [ ] 調査・分析項目を記載する
+    validations:
+      required: true
+
+  - type: textarea
+    id: completion_requirements
+    attributes:
+      label: 完了要件
+      description: 調査・分析を完了と判断できる条件を、Markdownのチェックリストで記載してください。
+      value: |
+        - [ ] 結果と判断根拠を記録する
+        - [ ] 制約と未決定事項を記録する
+    validations:
+      required: true
+
+  - type: textarea
+    id: results
+    attributes:
+      label: 結果・メモ
+      description: 調査結果、判断、参考資料を記録してください。Issue作成時は空欄でも構いません。
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 備考
+      description: 関連資料、制約、補足事項があれば記載してください。任意項目です。

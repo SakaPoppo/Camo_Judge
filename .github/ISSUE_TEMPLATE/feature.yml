@@ -1,0 +1,38 @@
+name: 機能追加・改善
+description: 新しい機能や既存機能の改善を提案します
+title: ""
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: 概要
+      description: 何を実装・改善するかを簡潔に記載してください。
+      placeholder: 例）画像から主要色を抽出できるようにする
+    validations:
+      required: true
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: 作業内容
+      description: Markdownのチェックリストで、必要な作業を記載してください。
+      value: |
+        - [ ] 作業項目を記載する
+    validations:
+      required: true
+
+  - type: textarea
+    id: completion_requirements
+    attributes:
+      label: 完了要件
+      description: このIssueを完了と判断できる条件を、Markdownのチェックリストで記載してください。
+      value: |
+        - [ ] 完了条件を記載する
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 備考
+      description: 関連資料、制約、補足事項があれば記載してください。任意項目です。
