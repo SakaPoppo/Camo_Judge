@@ -1,0 +1,46 @@
+name: バグ修正
+description: 不具合の内容と修正方針を記録します
+title: ""
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 不具合の内容
+      description: 何が起きているかを簡潔に記載してください。
+      placeholder: 発生条件やエラーメッセージがあれば併記してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する動作
+      description: 本来どのように動作するべきかを記載してください。
+    validations:
+      required: true
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: 対応内容
+      description: Markdownのチェックリストで、修正する作業を記載してください。調査前は空欄でも構いません。
+      value: |
+        - [ ] 原因を調査する
+        - [ ] 修正して動作確認する
+
+  - type: textarea
+    id: completion_requirements
+    attributes:
+      label: 完了要件
+      description: このIssueを完了と判断できる条件を、Markdownのチェックリストで記載してください。
+      value: |
+        - [ ] 不具合が再現しないことを確認する
+        - [ ] 既存機能への影響がないことを確認する
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 備考
+      description: 関連資料、制約、補足事項があれば記載してください。任意項目です。
