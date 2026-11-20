@@ -16,8 +16,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
 
+[project.scripts]
+camo-judge-seed = "camo_judge.seed:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,8 +1,8 @@
 # データ仕様書 — 画像収集・品質・メタデータ
 
-- **版**：Draft v0.3
-- **更新日**：2026-11-17
-- **状態**：画像カテゴリ、収集・品質・保存、DB基本方針は確定。前処理とDB詳細設計は未決定
+- **版**：Draft v0.4
+- **更新日**：2026-11-20
+- **状態**：画像カテゴリ、収集・品質・保存、PostgreSQLの4テーブル詳細は確定・実装済み。画像前処理と分析条件は未決定
 
 ## 1. 目的
 
@@ -159,25 +159,25 @@ ODと柄物の比較だけでは色彩や明暗などの条件も同時に異な
 - 将来、画像特徴量とWebクイズの回答結果を画像IDでJOINできる構成を想定する。
 - 画像本体はDBに格納せず、識別情報、分類、出典、品質判定、保存先、加工履歴を管理する。
 
-### 6.1 管理する情報の候補
+### 6.1 管理する情報
 
-以下は管理対象となる情報の候補であり、正式なカラム名・型・必須条件ではありません。
+4テーブルで次の情報を管理します。正式なカラム、型、必須条件は「8. PostgreSQL詳細設計」を正とします。
 
 | 情報 | 内容 |
 |---|---|
 | 画像ID | 分類から独立した一意な識別子 |
 | 画像の役割 | 迷彩画像 / 背景画像 |
-| 迷彩分類 | 迷彩パターン、系列、バリエーション |
+| 迷彩分類 | 迷彩パターン、系列、比較グループ |
 | 背景分類 | 背景タイプ、`green` / `dry` |
 | 収集方法 | 公開画像 / 自撮り画像 |
-| 出典・権利 | 出典URL、撮影者、利用・再配布条件 |
-| 撮影情報 | 撮影日、フィールド名、距離、カメラ高、画角、季節、照明など |
-| 品質判定 | `accepted` / `pending` / `rejected`、判定理由、変更理由 |
-| 色管理 | ICCプロファイル、確認状況、変換内容 |
-| 加工情報 | 切り抜き、リサイズ、色空間変換、加工条件、バージョン |
+| 出典・権利 | 出典URL、利用条件、公開可否 |
+| 撮影情報 | 撮影日、距離、カメラ高、照明 |
+| 品質判定 | `accepted` / `pending` / `rejected`、判定理由 |
+| ファイル情報 | 保存先、形式、サイズ、色空間、SHA-256ハッシュ |
+| 加工情報 | 原本・加工済みの区別と加工バージョン |
 | 備考 | 不明値、品質上の注意、分類上の補足 |
 
-正式なカラム名、データ型、NULLの扱い、制約、命名規則は詳細設計で決定します。不明な撮影条件やICCプロファイルは推測で補完しません。
+`photographer`、`field_site_name`、`reviewed_at`、`rights_status`、`redistribution_status` は今回の4テーブルには設けません。不明な撮影条件や色空間は推測で補完せず、NULLまたは備考として扱います。
 
 ## 7. 画像ファイル保存方針【確定】
 
@@ -194,9 +194,9 @@ data/
 └── processed/     # 分析用加工画像
 ```
 
-ローカル画像のバックアップ方法と将来のクラウド移行方法は未決定です。画像ファイル、秘密情報、権利上公開できない情報をGitHubへ誤って追加しないよう、Git管理対象を詳細設計で定めます。今回はディレクトリの新規構築やGit管理設定の実装は行いません。
+ローカル画像のバックアップ方法と将来のクラウド移行方法は未決定です。`data/raw/`、`data/processed/`、`.env` は `.gitignore` で除外し、画像ファイル、秘密情報、権利上公開できない情報をGitHubへ追加しません。
 
-## 8. PostgreSQL基本設計【確定範囲】
+## 8. PostgreSQL詳細設計【確定・実装済み】
 
 ### 8.1 4テーブルの役割
 
@@ -207,26 +207,100 @@ data/
 | `images` | 画像ごとの役割、分類、撮影条件、出典、品質判定などを管理する |
 | `image_files` | 原本・加工済みファイルの保存先、形式、サイズ、色空間、ハッシュ、加工バージョンなどを管理する |
 
-`green` / `dry` は背景タイプではなく、`images` に属する画像ごとの植生状態として扱います。迷彩画像と背景画像では異なる分類情報を持つことを考慮します。
+`green` / `dry` は背景タイプではなく、`images` に属する背景画像ごとの植生状態として扱います。
 
-### 8.2 テーブル間の関係
+### 8.2 `camouflage_patterns`（6カラム）
+
+| カラム | 型 | NULL | 制約・用途 |
+|---|---|---|---|
+| `id` | BIGINT | 不可 | PK、自動採番 |
+| `code` | VARCHAR(4) | 不可 | UNIQUE、`CM` + 2桁 |
+| `name` | VARCHAR(100) | 不可 | 空文字不可 |
+| `family` | VARCHAR(50) | 可 | MultiCam、A-TACSなどの系列 |
+| `comparison_group` | VARCHAR(20) | 不可 | `green` / `dry` / `general` / `independent` / `solid` |
+| `created_at` | TIMESTAMPTZ | 不可 | `NOW()` |
+
+`variant` は設けません。SeedではCM01〜CM09をコード単位でUPSERTします。
+
+### 8.3 `background_types`（5カラム）
+
+| カラム | 型 | NULL | 制約・用途 |
+|---|---|---|---|
+| `id` | BIGINT | 不可 | PK、自動採番 |
+| `code` | VARCHAR(4) | 不可 | UNIQUE、`BG` + 2桁 |
+| `name` | VARCHAR(100) | 不可 | 空文字不可 |
+| `description` | TEXT | 可 | 背景タイプの補足 |
+| `created_at` | TIMESTAMPTZ | 不可 | `NOW()` |
+
+`sort_order` と `updated_at` は設けません。SeedではBG01〜BG06をコード単位でUPSERTします。
+
+### 8.4 `images`（19カラム）
+
+| カラム | 型 | NULL | 制約・用途 |
+|---|---|---|---|
+| `id` | BIGINT | 不可 | PK、自動採番 |
+| `code` | VARCHAR(20) | 不可 | UNIQUE、`IMG` + 4桁以上 |
+| `role` | VARCHAR(10) | 不可 | `background` / `camouflage` |
+| `camouflage_pattern_id` | BIGINT | 可 | `camouflage_patterns.id` へのFK |
+| `background_type_id` | BIGINT | 可 | `background_types.id` へのFK |
+| `vegetation_state` | VARCHAR(10) | 可 | 背景画像では `green` / `dry` |
+| `source_type` | VARCHAR(10) | 不可 | `self` / `public` |
+| `source_url` | TEXT | 可 | 公開画像の出典URL |
+| `license` | TEXT | 可 | 利用条件の根拠 |
+| `publication_status` | VARCHAR(20) | 不可 | `unknown` / `allowed` / `not_allowed`、初期値 `unknown` |
+| `quality_status` | VARCHAR(10) | 不可 | `accepted` / `pending` / `rejected`、初期値 `pending` |
+| `quality_reason` | TEXT | 可 | 保留・除外理由。`rejected` では必須 |
+| `capture_date` | DATE | 可 | 撮影日 |
+| `distance_m` | NUMERIC(5,2) | 可 | 正の数。未確認はNULL |
+| `camera_height_m` | NUMERIC(4,2) | 可 | 正の数。未確認はNULL |
+| `created_at` | TIMESTAMPTZ | 不可 | `NOW()` |
+| `lighting` | VARCHAR(50) | 可 | 撮影時の照明・明暗条件 |
+| `notes` | TEXT | 可 | 補足 |
+| `updated_at` | TIMESTAMPTZ | 不可 | INSERT時は`NOW()`、UPDATE時はDBトリガーで更新 |
+
+分類の整合性は1つのCHECK制約で保証します。
+
+- 背景画像：`background_type_id` と `vegetation_state` が必須で、`camouflage_pattern_id` はNULL。
+- 迷彩画像：`camouflage_pattern_id` が必須で、`background_type_id` と `vegetation_state` はNULL。
+- 公開画像を `allowed` にする場合は、`source_url` と `license` の両方を必須とする。
+- `pending` は初期登録を可能にするため理由をNULLにできる。明示的に除外する `rejected` は理由を必須とする。
+
+### 8.5 `image_files`（11カラム）
+
+| カラム | 型 | NULL | 制約・用途 |
+|---|---|---|---|
+| `id` | BIGINT | 不可 | PK、自動採番 |
+| `image_id` | BIGINT | 不可 | `images.id` へのFK |
+| `file_type` | VARCHAR(10) | 不可 | `raw` / `processed` |
+| `storage_path` | TEXT | 不可 | UNIQUE、相対パス |
+| `file_format` | VARCHAR(4) | 不可 | `JPEG` / `PNG` |
+| `width_px` | BIGINT | 不可 | 正の数 |
+| `height_px` | BIGINT | 不可 | 正の数 |
+| `color_space` | VARCHAR(40) | 可 | sRGBなど。未確認はNULL |
+| `file_hash` | VARCHAR(64) | 不可 | 小文字16進数のSHA-256 |
+| `processing_version` | VARCHAR(50) | 可 | `raw` はNULL、`processed` は必須 |
+| `created_at` | TIMESTAMPTZ | 不可 | `NOW()` |
+
+原本は1画像につき1件まで、加工済み画像は1画像に複数バージョンを登録できます。PostgreSQLでは通常のUNIQUE制約がNULL同士を重複とみなさないため、`file_type = 'raw'` を条件とする部分UNIQUEインデックスで原本1件を保証します。加工済み画像は `image_id + processing_version` の部分UNIQUEインデックスでバージョン重複を防ぎます。
+
+`storage_path` は空文字、絶対パス、親ディレクトリ `..` を拒否します。
+
+### 8.6 テーブル間の関係
 
 - `camouflage_patterns` と `images`：1対多
 - `background_types` と `images`：1対多
 - `images` と `image_files`：1対多
 
-`images` の各レコードは迷彩または背景のいずれかの役割を持ちます。画像IDは分類から独立した一意な識別子とし、変更・再利用しない方針です。正式なID形式は詳細設計で決定します。
+`images` の各レコードは迷彩または背景のいずれかの役割を持ちます。各外部キーは `ON DELETE RESTRICT` とし、参照中のマスターや画像の誤削除を防ぎます。
 
-### 8.3 DB詳細設計で決めること
+### 8.7 実装・再現方法
 
-- カラムの正式名称・データ型
-- 主キーの具体的な実装方式
-- `NOT NULL` / `CHECK` / `UNIQUE` などの制約
-- 外部キーの詳細とインデックス
-- SQLAlchemyモデルとAlembicマイグレーション
-- Docker ComposeとDB接続設定
-- 特徴量・分析結果テーブルの詳細
-- 将来のWebクイズ用テーブルの詳細
+- PostgreSQL 16をDocker Composeで起動する。
+- DB接続先は `DATABASE_URL` で指定する。
+- SQLAlchemy 2.xのモデルとAlembic初期マイグレーションを同じ定義に保つ。
+- 空DBに `alembic upgrade head` を実行して4テーブルを再現する。
+- `python -m camo_judge.seed` で迷彩9件・背景6件を冪等に登録する。
+- 特徴量・分析結果テーブルとWebクイズ用テーブルはIssue #7の対象外とする。
 
 ## 9. 画像を比較する際の単位
 
@@ -241,11 +315,9 @@ data/
 
 - [ ] 利用する画像の具体的な出典、ライセンス、再配布・GitHub公開範囲
 - [ ] 切り抜き、リサイズ、自動ホワイトバランス・彩度補正の方法
-- [ ] ファイル・ディレクトリの命名規則とGit管理対象
+- [ ] 画像ファイルの命名規則
 - [ ] ローカル画像のバックアップ方法と将来のクラウド移行
 - [ ] 背景3枚の集計方法
 - [ ] Tiger Stripeの具体的なバリエーション
-- [ ] PostgreSQLのカラム、型、主キー、制約、外部キー、インデックス
-- [ ] SQLAlchemy、Alembic、Docker Compose、DB接続設定
 - [ ] 特徴量・分析結果テーブルとWebクイズ用テーブルの詳細
 - [ ] クイズ画像の縦横比、解像度、表示サイズ

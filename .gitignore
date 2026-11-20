@@ -1,2 +1,15 @@
 .DS_Store
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Image files stay local; only metadata is committed.
+data/raw/
+data/processed/
 
