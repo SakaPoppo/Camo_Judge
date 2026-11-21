@@ -1,8 +1,8 @@
 # Camo Analysis（仮称）
 
-> **状態：企画・仕様検討中（2026-11-17時点）**
+> **状態：企画・仕様検討中／DB基盤実装済み（2026-11-20時点）**
 >
-> このリポジトリは、迷彩柄と背景環境の画像特徴量を比較するデータ分析プロジェクトです。現時点で実装・画像収集・分析は未着手です。
+> このリポジトリは、迷彩柄と背景環境の画像特徴量を比較するデータ分析プロジェクトです。PostgreSQLによる画像メタデータ管理基盤まで実装済みで、画像収集・分析は未着手です。
 
 ## プロジェクト概要
 
@@ -94,13 +94,13 @@ Webクイズで人間の発見時間・正答率を収集し、画像特徴量�
 - 画像はローカルに保存し、原本の `raw/` と加工済みの `processed/` を分離する。原本は上書きしない。
 - 主データ管理にはPostgreSQLを採用し、画像本体ではなく識別情報、分類、出典、品質判定、ファイル情報などを管理する。
 
-PostgreSQLの基本構成は、迷彩マスター `camouflage_patterns`、背景マスター `background_types`、画像情報 `images`、画像ファイル情報 `image_files` の4テーブルです。カラム・型・制約などの詳細設計は未決定です。
+PostgreSQLの基本構成は、迷彩マスター `camouflage_patterns`、背景マスター `background_types`、画像情報 `images`、画像ファイル情報 `image_files` の4テーブルです。SQLAlchemy 2.xでモデルを定義し、Alembicで空のPostgreSQLから再現できます。原本は1画像につき1件、加工済みファイルはバージョンごとに複数件を登録できます。カラム・型・制約の詳細は[データ仕様書](docs/data_specification.md)を参照してください。
 
 ## 進め方（CRISP-DM）
 
 1. **Business Understanding**：研究目的・RQ・仮説の定義 → **STEP 1確定**
 2. **Data Understanding**：カテゴリ、画像収集・品質・保存、DB基本方針 → **STEP 2の基本方針確定**
-3. **Data Preparation**：切り抜き、リサイズ、色管理変換、特徴量抽出 → 詳細は未決定
+3. **Data Preparation**：DB基盤を実装済み。切り抜き、リサイズ、色管理変換、特徴量抽出の詳細は未決定
 4. **Modeling**：各特徴量の距離を計算して比較（MVPでは機械学習を必須としない）
 5. **Evaluation**：結果の妥当性・限界を確認し、考察を記録
 6. **Deployment**：再現可能な分析コードと結果をGitHubへ公開
@@ -116,7 +116,7 @@ PostgreSQLの基本構成は、迷彩マスター `camouflage_patterns`、背景
 
 1. **利用画像の確定**：具体的な出典、ライセンス、再配布・GitHub公開範囲
 2. **画像前処理**：切り抜き、リサイズ、自動補正の扱い
-3. **保存・DB詳細設計**：命名規則、バックアップ、カラム、型、制約、インデックス
+3. **画像保存の運用詳細**：ファイル命名規則、バックアップ、将来のクラウド移行
 4. **Tiger Stripeの具体的なバリエーション**：採用画像の製品・柄の特定
 5. **採用する特徴量と計算条件**：v0.1に含める範囲
 6. **背景3枚の集計方法**：平均、ばらつき、順位付けの扱い
@@ -126,8 +126,8 @@ PostgreSQLの基本構成は、迷彩マスター `camouflage_patterns`、背景
 
 - [x] STEP 2：背景・迷彩カテゴリとデータ規模を確定
 - [x] STEP 2：画像収集・撮影・品質・保存・DB基本方針を確定
+- [x] PostgreSQL 16、SQLAlchemy 2.x、Alembic、4テーブル、Seedを実装
 - [ ] 利用画像・ライセンス・公開範囲を確定
-- [ ] PostgreSQLの詳細設計を確定
 - [ ] STEP 3：特徴量・比較手法を確定
 - [ ] データ収集・品質確認
 - [ ] 前処理・特徴量抽出を実装
@@ -141,6 +141,66 @@ PostgreSQLの基本構成は、迷彩マスター `camouflage_patterns`、背景
 - 画像の公開・再配布は個別のライセンスに従ってください。
 - 分析結果は、実測されていない実環境での性能を保証しません。
 
-## 実行方法
+## DB開発環境の実行方法
 
-**未作成**。分析コード実装時に、環境構築手順・必要ライブラリ・Notebookの実行順を追記します。
+### 1. Python環境
+
+Python 3.12以上を使用します。
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+```
+
+### 2. 環境変数
+
+`.env.example` をコピーし、ローカル用の値を設定します。`.env` はGit管理対象外です。
+
+```bash
+cp .env.example .env
+set -a
+source .env
+set +a
+```
+
+`POSTGRES_PORT` を変更する場合は、`DATABASE_URL` のポートも同じ値に変更してください。
+
+### 3. PostgreSQL 16の起動
+
+```bash
+docker compose up -d db
+docker compose ps
+```
+
+### 4. マイグレーション
+
+```bash
+alembic upgrade head
+```
+
+空のPostgreSQLから `camouflage_patterns`、`background_types`、`images`、`image_files` の4テーブルを作成します。
+
+### 5. マスターデータのSeed
+
+```bash
+python -m camo_judge.seed
+```
+
+迷彩9種類と背景6種類を登録します。Seedは冪等で、再実行しても重複しません。
+
+### 6. テスト
+
+```bash
+pytest
+```
+
+テストは `DATABASE_URL` のPostgreSQLサーバー上に一時DBを作成し、マイグレーション、Seed、DB制約を検証して終了時に一時DBを削除します。Docker Composeの標準ユーザーはこのテストに必要なDB作成権限を持ちます。
+
+### 7. 停止
+
+```bash
+docker compose down
+```
+
+`docker compose down -v` はDBボリュームも削除するため、データを初期化するときだけ使用してください。
